@@ -10,6 +10,7 @@ This project demonstrates a complete RAG pipeline that allows you to:
 - 🔍 Create semantic embeddings using local models
 - 💾 Store embeddings in a vector database
 - 🤖 Query documents using a local LLM
+- 🛠️ Run a small tool-calling agent for date/time demos
 
 The entire system runs locally using [Ollama](https://ollama.ai), ensuring your data never leaves your machine.
 
@@ -108,6 +109,25 @@ This will:
 4. Index documents into Chroma
 5. Answer predefined questions
 
+### Agent Demo
+
+The repository also includes `agent_local.py`, a small LangChain agent example that uses a local Ollama model and a custom date/time tool.
+
+Run it from the project virtual environment:
+
+```bash
+source venv/bin/activate
+python agent_local.py
+```
+
+The agent is configured to print when the tool is invoked, so you can see calls like:
+
+```text
+[tool] get_current_datetime invoked with format=%Y-%m-%d %H:%M:%S
+```
+
+It also uses a local system prompt and verbose/debug agent output so you can follow the agent flow while testing.
+
 ### Using the Pipeline Programmatically
 
 ```python
@@ -158,6 +178,7 @@ query_rag(rag_chain, "Your question here")
 ```
 ollama_rag/
 ├── rag_local.py           # Main RAG pipeline implementation
+├── agent_local.py         # LangChain agent example with a custom date/time tool
 ├── .env                   # Configuration (create from .env.example)
 ├── .gitignore            # Git ignore rules
 ├── data/                 # Directory for PDF documents
