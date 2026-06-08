@@ -1,11 +1,14 @@
 from dotenv import load_dotenv
+import os
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 import datetime
-from ddgs import ddgs
+from ddgs import DDGS
 
 load_dotenv()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 @tool
 def get_current_datetime(format: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -28,8 +31,8 @@ def web_search(query: str) -> str:
     """
     try:
         print(f"[tool] web_search invoked with query='{query}'")
-        with ddgs() as ddg:
-            results = ddg.search(query, max_results=3)
+        with DDGS() as ddg:
+            results = ddg.text(query, max_results=3)
         print(f"Web search results for '{query}': {results}")
 
         search_results = []
@@ -38,7 +41,7 @@ def web_search(query: str) -> str:
             body = result.get("body", "No description")
             search_results.append(f"{i}. {title}: {body}\n")
         
-        return search_results if search_results else "No results found."
+        return "\n".join(search_results) if search_results else "No results found."
     except Exception as e:
         return f"Error performing web search: {e}"
     
@@ -57,7 +60,27 @@ def get_agent_llm(model_name="qwen3:4b", temperature=0):
         # Consider increasing num_ctx if expecting long conversations or complex reasoning
         # num_ctx=8192
     )
+    
     print(f"Initialized ChatOllama agent LLM with model: {model_name}")
+    return llm
+
+def get_agent_llm_openrouter(model_name="nvidia/nemotron-3-ultra-550b-a55b:free", temperature=0):
+    """Initializes the OpenRouter model for the agent."""
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is not set in the environment.")
+
+    llm = ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        api_key=OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost"),
+            "X-Title": os.getenv("OPENROUTER_APP_NAME", "ollama_rag"),
+        },
+    )
+
+    print(f"Initialized OpenRouter agent LLM with model: {model_name}")
     return llm
 
 # agent_llm = get_agent_llm() 
@@ -79,7 +102,7 @@ def get_agent_prompt():
 
 def build_agent(llm, tools, prompt):
     """Builds the tool-calling agent runnable."""
-    agent = create_agent(model=llm, tools=tools, system_prompt=prompt, debug=True)
+    agent = create_agent(model=llm, tools=tools, system_prompt=prompt, debug=False)
     print("Agent runnable created.")
     return agent
 
@@ -109,7 +132,7 @@ if __name__ == "__main__":
     # 1. Define Tools (already done above)
 
     # 2. Get Agent LLM
-    agent_llm = get_agent_llm(model_name="qwen3:8b") # Use the chosen Qwen 3 model
+    agent_llm = get_agent_llm()
 
     # 3. Get Agent Prompt
     agent_prompt = get_agent_prompt()
@@ -118,10 +141,10 @@ if __name__ == "__main__":
     agent_runnable = build_agent(agent_llm, tools, agent_prompt)
 
     # 5. Create Agent Executor
-    agent_executor = create_agent_executor(agent_runnable, tools)
+    # agent_executor = create_agent_executor(agent_runnable, tools)
 
     # 6. Run Agent
-    run_agent(agent_executor, "Search for local cafes in London and rank the top 3 based on user reviews.") # Should use web_search tool
-    run_agent(agent_executor, "What is the current date?")
-    run_agent(agent_executor, "What time is it right now? Use HH:MM format.")
-    run_agent(agent_executor, "Tell me a joke.") # Should not use the tool
+    run_agent(agent_runnable, "Search for local cafes in London and rank the top 3 based on user reviews.") # Should use web_search tool
+    run_agent(agent_runnable, "What is the current date?")
+    run_agent(agent_runnable, "What time is it right now? Use HH:MM format.")
+    run_agent(agent_runnable, "Tell me a joke.") # Should not use the tool
