@@ -3,6 +3,7 @@ from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 import datetime
+from ddgs import ddgs
 
 load_dotenv()
 
@@ -19,14 +20,35 @@ def get_current_datetime(format: str = "%Y-%m-%d %H:%M:%S") -> str:
         return datetime.datetime.now().strftime(format)
     except Exception as e:
         return f"Error formatting date/time: {e}"
+
+@tool
+def web_search(query: str) -> str:
+    """
+    Performs a web search for the given query and returns the results.
+    """
+    try:
+        print(f"[tool] web_search invoked with query='{query}'")
+        with ddgs() as ddg:
+            results = ddg.search(query, max_results=3)
+        print(f"Web search results for '{query}': {results}")
+
+        search_results = []
+        for i, result in enumerate(results, 1):
+            title = result.get("title", "No title")
+            body = result.get("body", "No description")
+            search_results.append(f"{i}. {title}: {body}\n")
+        
+        return search_results if search_results else "No results found."
+    except Exception as e:
+        return f"Error performing web search: {e}"
     
 
 # List of tools the agent can use
-tools = [get_current_datetime]
+tools = [get_current_datetime, web_search]
 print("Custom tool defined.")
 
 
-def get_agent_llm(model_name="qwen3:8b", temperature=0):
+def get_agent_llm(model_name="qwen3:4b", temperature=0):
     """Initializes the ChatOllama model for the agent."""
     # Ensure Ollama server is running (ollama serve)
     llm = ChatOllama(
@@ -43,8 +65,12 @@ def get_agent_llm(model_name="qwen3:8b", temperature=0):
 def get_agent_prompt():
     """Returns a simple system prompt for the agent."""
     prompt = (
-        "You are a helpful assistant. Use tools when they are useful, "
-        "especially for current date and time questions."
+        """
+        You are a helpful assistant that can use tools to answer user questions.
+        Use the provided tools whenever the user asks for information that can be obtained through them (e.g., current date/time, web search).
+        If the user asks for something that cannot be answered with the tools, respond with your best knowledge or say you don't know.
+        Always try to use the tools when appropriate to provide accurate and up-to-date information. If web_search is used to answer a question, include the search results in your response to the user.
+        """
     )
     print("Using local system prompt.")
     return prompt
@@ -95,6 +121,7 @@ if __name__ == "__main__":
     agent_executor = create_agent_executor(agent_runnable, tools)
 
     # 6. Run Agent
+    run_agent(agent_executor, "Search for local cafes in London and rank the top 3 based on user reviews.") # Should use web_search tool
     run_agent(agent_executor, "What is the current date?")
     run_agent(agent_executor, "What time is it right now? Use HH:MM format.")
     run_agent(agent_executor, "Tell me a joke.") # Should not use the tool
