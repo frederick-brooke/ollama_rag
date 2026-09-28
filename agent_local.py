@@ -2,13 +2,17 @@ from dotenv import load_dotenv
 import os
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain.agents import create_agent
+from langchain_community.vectorstores import Chroma
 import datetime
 from ddgs import DDGS
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+CHROMA_PATH = os.getenv("CHROMA_PATH", "Chroma_db")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+EMBEDDING_TOP_K = int(os.getenv("EMBEDDING_TOP_K", "3"))
 
 @tool
 def get_current_datetime(format: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -44,14 +48,44 @@ def web_search(query: str) -> str:
         return "\n".join(search_results) if search_results else "No results found."
     except Exception as e:
         return f"Error performing web search: {e}"
+
+@tool
+def semantic_search(query: str) -> str:
+    """
+    Performs a semantic similarity search over the local knowledge base (an indexed PDF book on building effective AI agents) and returns the most relevant passages with their source page numbers.
+    Use this tool whenever the user asks about the contents of the indexed document, such as agent architecture patterns, multi-agent systems, RAG, planning, memory, tools, and implementation frameworks.
+    """
+    try:
+        print(f"[tool] semantic_search invoked with query='{query}'")
+        embedding_function = OllamaEmbeddings(model=EMBEDDING_MODEL)
+        vector_store = Chroma(
+            persist_directory=CHROMA_PATH,
+            embedding_function=embedding_function,
+        )
+        retriever = vector_store.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": EMBEDDING_TOP_K},
+        )
+        documents = retriever.invoke(query)
+        print(f"Retrieved {len(documents)} documents for '{query}'.")
+
+        results = []
+        for i, doc in enumerate(documents, 1):
+            page = doc.metadata.get("page") or doc.metadata.get("page_label", "N/A")
+            source = doc.metadata.get("source", "unknown")
+            results.append(f"{i}. [Page {page}] (Source: {source})\n{doc.page_content}\n")
+
+        return "\n".join(results) if results else "No relevant documents found in the local knowledge base."
+    except Exception as e:
+        return f"Error performing semantic search: {e}"
     
 
 # List of tools the agent can use
-tools = [get_current_datetime, web_search]
+tools = [get_current_datetime, web_search, semantic_search]
 print("Custom tool defined.")
 
 
-def get_agent_llm(model_name="qwen3:4b", temperature=0):
+def get_agent_llm(model_name="qwen3:0.6b", temperature=0):
     """Initializes the ChatOllama model for the agent."""
     # Ensure Ollama server is running (ollama serve)
     llm = ChatOllama(
@@ -91,6 +125,9 @@ def get_agent_prompt():
         """
         You are a helpful assistant that can use tools to answer user questions.
         Use the provided tools whenever the user asks for information that can be obtained through them (e.g., current date/time, web search).
+        You have access to a local knowledge base: an indexed PDF book about building effective AI agents (architecture patterns, multi-agent systems, RAG, planning, memory, tools, and implementation frameworks).
+        Whenever the user asks a question about the contents of this document, you MUST use the semantic_search tool to retrieve relevant passages before answering.
+        Ground your answer in the retrieved passages and cite the source page numbers. If semantic_search returns no relevant results, use web_search or your best knowledge as a fallback.
         If the user asks for something that cannot be answered with the tools, respond with your best knowledge or say you don't know.
         Always try to use the tools when appropriate to provide accurate and up-to-date information. If web_search is used to answer a question, include the search results in your response to the user.
         """
@@ -147,4 +184,5 @@ if __name__ == "__main__":
     run_agent(agent_runnable, "Search for local cafes in London and rank the top 3 based on user reviews.") # Should use web_search tool
     run_agent(agent_runnable, "What is the current date?")
     run_agent(agent_runnable, "What time is it right now? Use HH:MM format.")
+    run_agent(agent_runnable, "What are the common architecture patterns for building effective AI agents described in the document?") # Should use semantic_search tool
     run_agent(agent_runnable, "Tell me a joke.") # Should not use the tool

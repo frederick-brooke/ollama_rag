@@ -111,7 +111,11 @@ This will:
 
 ### Agent Demo
 
-The repository also includes `agent_local.py`, a small LangChain agent example that uses a local Ollama model and a custom date/time tool.
+The repository also includes `agent_local.py`, a small LangChain tool-calling agent that uses a local Ollama model (`qwen3:0.6b` by default). The agent can:
+
+- 🕐 Return the current date and time (`get_current_datetime`)
+- 🌐 Search the web (`web_search`)
+- 🔍 Semantically search the local knowledge base (`semantic_search`) — retrieved passages from the indexed PDF are grounded into answers with page citations
 
 Run it from the project virtual environment:
 
@@ -120,13 +124,12 @@ source venv/bin/activate
 python agent_local.py
 ```
 
-The agent is configured to print when the tool is invoked, so you can see calls like:
+The agent prints a `[tool]` line whenever a tool is invoked, so you can follow the agent's flow:
 
 ```text
 [tool] get_current_datetime invoked with format=%Y-%m-%d %H:%M:%S
+[tool] semantic_search invoked with query='architecture patterns for AI agents'
 ```
-
-It also uses a local system prompt and verbose/debug agent output so you can follow the agent flow while testing.
 
 ### Using the Pipeline Programmatically
 
@@ -172,6 +175,107 @@ vector_store = get_vector_store(embeddings)
 rag_chain = create_rag_chain(vector_store)
 query_rag(rag_chain, "Your question here")
 ```
+
+## Demo
+
+Below is a real output from running the agent with `qwen3:4b` (`get_agent_llm(model_name="qwen3:4b")`). It shows the agent deciding when to call a tool and how it grounds answers in the retrieved document.
+
+| # | User query | Tool invoked | Result |
+|---|------------|--------------|--------|
+| 1 | "Search for local cafes in London and rank the top 3 based on user reviews." | `web_search` | ✅ Ranked the top 3 sources by user reviews |
+| 2 | "What is the current date?" | `get_current_datetime` | ✅ Current date returned |
+| 3 | "What time is it right now? Use HH:MM format." | `get_current_datetime` | ✅ Correct time returned (`17:25`) |
+| 4 | "What are the common architecture patterns…" | `semantic_search` | ✅ Grounded answer quoting Page 9 of the document |
+| 5 | "Tell me a joke." | *(none)* | ✅ Answered directly — no tool needed |
+
+```text
+Invoking agent...
+Input: Search for local cafes in London and rank the top 3 based on user reviews.
+[tool] web_search invoked with query='top 3 local cafes in London ranked by user reviews'
+
+Agent Response:
+Based on the web search results, here are the top platforms where you can find
+London cafes ranked by user reviews (though the exact top 3 names aren't
+explicitly listed in the results):
+
+1. **Yusker** – Lists the *24 best cafés in London* ranked by **real community
+   signals** (not paid reviews). This platform emphasizes authentic local feedback.
+2. **Tripadvisor** – Features the *10 best cafes in London* (note: the "2026" date
+   in the result appears to be a typo) based on **traveller reviews**.
+3. **Not Another Sunday** – Highlights *15 highest-ranked independent cafes* in
+   London using metrics like **NRI (local reputation)**, **buzz**, and
+   **community credibility**.
+
+While the search results don't provide the specific top 3 cafe names, these
+platforms are the most relevant sources for user-reviewed rankings in London. For
+the most current and detailed lists, I recommend checking Yusker or Tripadvisor
+directly (as they prioritize real-time user feedback).
+
+*Note: The "2026" date in Tripadvisor's result likely indicates a placeholder or
+error, as current data would be for 2024/2025.*
+
+────────────────────────────────────────────────────────────────────────────────
+
+Invoking agent...
+Input: What is the current date?
+[tool] get_current_datetime invoked with format=%Y-%m-%d
+
+Agent Response:
+The current date is **2026-09-28**.
+
+────────────────────────────────────────────────────────────────────────────────
+
+Invoking agent...
+Input: What time is it right now? Use HH:MM format.
+[tool] get_current_datetime invoked with format=%H:%M
+
+Agent Response:
+The current time is **17:25**.
+
+────────────────────────────────────────────────────────────────────────────────
+
+Invoking agent...
+Input: What are the common architecture patterns for building effective AI agents
+described in the document?
+[tool] semantic_search invoked with query='common architecture patterns for building effective AI agents'
+Retrieved 3 documents for 'common architecture patterns for building effective AI agents'.
+
+Agent Response:
+The document describes **foundational design principles** as key architecture
+patterns for building effective AI agents, with a focus on **"Start simple, scale
+intelligently"** as a core pattern. This approach emphasizes beginning with
+single-purpose agents that excel at one task before gradually evolving into more
+complex systems to match business requirements.
+
+As noted in Chapter 3 (Page 9), the document states:
+> *"We suggest teams begin with single-purpose agents that do one thing well,
+> then gradually develop them into more sophisticated systems as your
+> requirements..."*
+
+This pattern helps avoid over-engineering while aligning technical complexity
+with business value. The document highlights that architectural choices must be
+tailored to specific use cases (e.g., customer support agents vs. multi-domain
+research systems), but the foundational pattern of incremental scaling is
+explicitly emphasized as a best practice.
+
+**Source**: Page 9 of *Building Effective AI Agents: Architecture Patterns and
+Implementation Frameworks* (Chapter 3).
+
+────────────────────────────────────────────────────────────────────────────────
+
+Invoking agent...
+Input: Tell me a joke.
+
+Agent Response:
+Here's a quick joke for you:
+
+**Why don't scientists trust atoms?**
+*Because they make up everything!*
+
+😄
+```
+
+> **Note:** This showcase was run with `qwen3:4b` for dependable tool use. The agent's default model is the much faster `qwen3:0.6b`, which is lighter and quicker but can be less reliable at following tool instructions. Choose per run by passing `model_name` to `get_agent_llm()`, e.g. `get_agent_llm(model_name="qwen3:4b")` for reliability or `get_agent_llm(model_name="qwen3:0.6b")` for speed.
 
 ## Project Structure
 
